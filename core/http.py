@@ -23,6 +23,7 @@ class ArrHttpClient:
         r.raise_for_status()
         return r.json()
 
+##
     async def delete(self, path: str):
         r = await self.client.delete(path)
         r.raise_for_status()

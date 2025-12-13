@@ -14,6 +14,6 @@ class Settings(BaseSettings):
     prowlarr_api_key: str
     database_url: str = f"sqlite+aiosqlite:///{BASE_DIR}/db/app.db"
 
-    model_config = SettingsConfigDict(env_file=BASE_DIR / ".env", env_file_encoding="utf-8",)
+    model_config = SettingsConfigDict(env_file=BASE_DIR / ".env", env_file_encoding="utf-8")
 
 settings = Settings()
