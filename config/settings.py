@@ -7,7 +7,7 @@ The Settings class performs strict validation and will raise errors on
 missing required fields or invalid configuration.
 """
 
-from typing import Optional
+from typing import Optional, List
 from pydantic import Field, HttpUrl, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pathlib import Path
@@ -60,6 +60,27 @@ class Settings(BaseSettings):
     database_url: str = Field(
         default=f"sqlite+aiosqlite:///{BASE_DIR}/db/app.db",
         description="SQLAlchemy database URL (supports SQLite, PostgreSQL, MySQL, etc.)"
+    )
+
+    # Indexer discovery configuration
+    discovery_enabled: bool = Field(
+        default=False,
+        description="Enable automatic indexer discovery from external sources"
+    )
+
+    discovery_sources: List[str] = Field(
+        default_factory=list,
+        description="List of HTTP(S) URLs to fetch potential indexer definitions from (JSON or newline list)"
+    )
+
+    discovery_interval_hours: int = Field(
+        default=24,
+        description="Default interval in hours between discovery runs when scheduled"
+    )
+
+    discovery_add_to_prowlarr: bool = Field(
+        default=False,
+        description="If true, discovered indexers will be automatically added to Prowlarr via its API"
     )
 
     model_config = SettingsConfigDict(

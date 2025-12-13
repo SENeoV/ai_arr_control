@@ -26,6 +26,7 @@ from services.prowlarr import ProwlarrService
 from agents.indexer_health_agent import IndexerHealthAgent
 from agents.indexer_control_agent import IndexerControlAgent
 from agents.indexer_autoheal_agent import IndexerAutoHealAgent
+from agents.indexer_discovery_agent import IndexerDiscoveryAgent
 from db.session import init_db, close_db, SessionLocal
 from db.models import IndexerHealth
 
@@ -100,10 +101,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     health_agent = IndexerHealthAgent(radarr, sonarr)
     control_agent = IndexerControlAgent(radarr, sonarr)
     autoheal_agent = IndexerAutoHealAgent(radarr, sonarr, control_agent)
+    discovery_agent = IndexerDiscoveryAgent(prowlarr if settings.discovery_add_to_prowlarr else None)
     # Attach agents to app.state for endpoint access and tests
     app.state.health_agent = health_agent
     app.state.control_agent = control_agent
     app.state.autoheal_agent = autoheal_agent
+    app.state.discovery_agent = discovery_agent
 
     # Create and configure scheduler
     logger.info("Initializing scheduler")
@@ -126,6 +129,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         coalesce=True,
         max_instances=1,
     )
+    # Schedule discovery agent if enabled
+    if settings.discovery_enabled:
+        scheduler.add_job(
+            discovery_agent.run,
+            "interval",
+            hours=settings.discovery_interval_hours,
+            id="discovery_agent",
+            name="Indexer Discovery",
+            coalesce=True,
+            max_instances=1,
+        )
     scheduler.start()
     logger.info("Scheduler started with jobs configured")
 
@@ -464,6 +478,19 @@ async def run_autoheal_agent() -> dict:
     except Exception as e:
         logger.error(f"Error running autoheal agent: {e}")
         raise HTTPException(status_code=500, detail=f"Error running autoheal agent: {str(e)}")
+
+
+@app.post("/agents/discovery/run", tags=["agents"])
+async def run_discovery_agent() -> dict:
+    """Manually trigger the discovery agent to run immediately."""
+    try:
+        discovery_agent = app.state.discovery_agent
+        logger.info("Manually triggering discovery agent")
+        await discovery_agent.run()
+        return {"success": True, "agent": "discovery_agent", "message": "Discovery run completed"}
+    except Exception as e:
+        logger.error(f"Error running discovery agent: {e}")
+        raise HTTPException(status_code=500, detail=f"Error running discovery agent: {str(e)}")
 
 
 @app.get("/health-history", tags=["monitoring"])

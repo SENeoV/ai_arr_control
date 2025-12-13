@@ -208,3 +208,5 @@ __marimo__/
 
 ## APP SPECIFIC IGNORE RULES
 */app.db
+*.log
+.ai_arr_control.pid
