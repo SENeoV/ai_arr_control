@@ -1,0 +1,2 @@
+pip install fastapi uvicorn httpx pydantic pydantic-settings sqlalchemy aiosqlite apscheduler loguru python-dotenv
+python -m uvicorn main:app --reload
