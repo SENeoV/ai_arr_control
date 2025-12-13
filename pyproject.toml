@@ -136,3 +136,7 @@ exclude_lines = [
     "class .*\\bProtocol\\):",
     "@(abc\\.)?abstractmethod",
 ]
+
+[project.scripts]
+ai-arr-control = "tools.cli:main"
+
