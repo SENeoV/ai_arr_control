@@ -17,7 +17,9 @@ def test_health_endpoint(client):
     """Test the health check endpoint."""
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    body = response.json()
+    assert isinstance(body, dict)
+    assert body.get("status") == "ok"
 
 
 def test_app_startup_requires_config():

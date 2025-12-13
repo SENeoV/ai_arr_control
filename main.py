@@ -100,6 +100,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     health_agent = IndexerHealthAgent(radarr, sonarr)
     control_agent = IndexerControlAgent(radarr, sonarr)
     autoheal_agent = IndexerAutoHealAgent(radarr, sonarr, control_agent)
+    # Attach agents to app.state for endpoint access and tests
+    app.state.health_agent = health_agent
+    app.state.control_agent = control_agent
+    app.state.autoheal_agent = autoheal_agent
 
     # Create and configure scheduler
     logger.info("Initializing scheduler")
@@ -376,8 +380,18 @@ async def disable_indexer(service: str, indexer_id: int) -> dict:
         raise HTTPException(status_code=400, detail=f"Cannot manage indexers on {service}")
     
     try:
+        if service not in ("radarr", "sonarr"):
+            raise HTTPException(status_code=400, detail=f"Cannot manage indexers on {service}")
+
+        svc = getattr(app.state, service)
+        # Locate indexer object
+        indexers = await svc.get_indexers()
+        indexer = next((i for i in indexers if i.get("id") == indexer_id), None)
+        if not indexer:
+            raise HTTPException(status_code=404, detail=f"Indexer {indexer_id} not found on {service}")
+
         control_agent = app.state.control_agent
-        await control_agent.disable_indexer(service, indexer_id)
+        await control_agent.disable_indexer(svc, indexer)
         logger.info(f"Disabled indexer {indexer_id} on {service}")
         return {"success": True, "service": service, "indexer_id": indexer_id, "action": "disabled"}
     except Exception as e:
@@ -400,8 +414,17 @@ async def enable_indexer(service: str, indexer_id: int) -> dict:
         raise HTTPException(status_code=400, detail=f"Cannot manage indexers on {service}")
     
     try:
+        if service not in ("radarr", "sonarr"):
+            raise HTTPException(status_code=400, detail=f"Cannot manage indexers on {service}")
+
+        svc = getattr(app.state, service)
+        indexers = await svc.get_indexers()
+        indexer = next((i for i in indexers if i.get("id") == indexer_id), None)
+        if not indexer:
+            raise HTTPException(status_code=404, detail=f"Indexer {indexer_id} not found on {service}")
+
         control_agent = app.state.control_agent
-        await control_agent.enable_indexer(service, indexer_id)
+        await control_agent.enable_indexer(svc, indexer)
         logger.info(f"Enabled indexer {indexer_id} on {service}")
         return {"success": True, "service": service, "indexer_id": indexer_id, "action": "enabled"}
     except Exception as e:
