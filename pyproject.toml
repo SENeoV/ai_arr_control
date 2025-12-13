@@ -141,6 +141,4 @@ exclude_lines = [
     "@(abc\\.)?abstractmethod",
 ]
 
-[project.scripts]
-ai-arr-control = "tools.cli:main"
 

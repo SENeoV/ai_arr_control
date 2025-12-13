@@ -27,6 +27,8 @@ from agents.indexer_health_agent import IndexerHealthAgent
 from agents.indexer_control_agent import IndexerControlAgent
 from agents.indexer_autoheal_agent import IndexerAutoHealAgent
 from agents.indexer_discovery_agent import IndexerDiscoveryAgent
+from agents.orchestrator import AgentOrchestrator
+from agents.monitor import AgentMonitor, EventType
 from db.session import init_db, close_db, SessionLocal
 from db.models import IndexerHealth
 from api.schemas import (
@@ -116,14 +118,34 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     control_agent = IndexerControlAgent(radarr, sonarr)
     autoheal_agent = IndexerAutoHealAgent(radarr, sonarr, control_agent)
     discovery_agent = IndexerDiscoveryAgent(prowlarr if settings.discovery_add_to_prowlarr else None)
+    
     # Attach agents to app.state for endpoint access and tests
     app.state.health_agent = health_agent
     app.state.control_agent = control_agent
     app.state.autoheal_agent = autoheal_agent
     app.state.discovery_agent = discovery_agent
 
-    # Create and configure scheduler
-    logger.info("Initializing scheduler")
+    # Create and initialize orchestrator with all agents
+    logger.info("Initializing agent orchestrator")
+    orchestrator = AgentOrchestrator(name="IndexerControlOrchestrator")
+    monitor = AgentMonitor(max_event_history=5000)
+    
+    # Register agents with orchestrator and schedules
+    orchestrator.register_agent(health_agent, interval_seconds=30 * 60)  # 30 minutes
+    orchestrator.register_agent(autoheal_agent, interval_seconds=2 * 60 * 60)  # 2 hours
+    orchestrator.register_agent(control_agent)  # On-demand only
+    
+    if settings.discovery_enabled:
+        orchestrator.register_agent(
+            discovery_agent,
+            interval_seconds=settings.discovery_interval_hours * 60 * 60,
+        )
+    
+    app.state.orchestrator = orchestrator
+    app.state.monitor = monitor
+    
+    # Create and configure legacy scheduler for backwards compatibility
+    logger.info("Initializing scheduler (legacy compatibility)")
     scheduler: AsyncIOScheduler = _create_scheduler()
     scheduler.add_job(
         health_agent.run,
@@ -804,3 +826,170 @@ async def get_startup_status() -> dict:
         Startup status including completion state, agent initialization, and any errors
     """
     return startup_status.get_status()
+
+@app.get("/orchestrator/status", tags=["orchestrator"])
+async def get_orchestrator_status() -> dict:
+    """Get comprehensive orchestrator status and metrics.
+    
+    Returns:
+        Orchestrator status including:
+        - Running state
+        - All registered agents and their status
+        - Schedule information
+        - Performance metrics
+    """
+    try:
+        orchestrator = app.state.orchestrator
+        return orchestrator.get_status()
+    except Exception as e:
+        logger.error(f"Error getting orchestrator status: {e}")
+        raise HTTPException(status_code=500, detail=f"Error getting orchestrator status: {str(e)}")
+
+
+@app.get("/monitor/health", tags=["orchestrator"])
+async def get_monitor_health() -> dict:
+    """Get agent health monitoring status.
+    
+    Returns:
+        Comprehensive health status including:
+        - Overall health percentage
+        - Individual agent health status
+        - Consecutive failure counts
+        - Recent events
+    """
+    try:
+        monitor = app.state.monitor
+        return monitor.get_status_summary()
+    except Exception as e:
+        logger.error(f"Error getting monitor health: {e}")
+        raise HTTPException(status_code=500, detail=f"Error getting monitor health: {str(e)}")
+
+
+@app.get("/monitor/events", tags=["orchestrator"])
+async def get_monitor_events(
+    agent_name: Optional[str] = None,
+    limit: int = 50
+) -> dict:
+    """Query monitored events with optional filtering.
+    
+    Args:
+        agent_name: Optional filter by agent name
+        limit: Maximum events to return
+        
+    Returns:
+        List of events matching the query criteria
+    """
+    try:
+        monitor = app.state.monitor
+        events = monitor.get_events(agent_name=agent_name, limit=limit)
+        return {
+            "count": len(events),
+            "agent_filter": agent_name,
+            "events": [
+                {
+                    "type": e.event_type.value,
+                    "agent": e.agent_name,
+                    "message": e.message,
+                    "timestamp": e.timestamp.isoformat(),
+                    "metadata": e.metadata,
+                }
+                for e in events
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Error getting monitor events: {e}")
+        raise HTTPException(status_code=500, detail=f"Error getting monitor events: {str(e)}")
+
+
+@app.post("/orchestrator/agent/{agent_name}/run", tags=["orchestrator"])
+async def trigger_agent_on_demand(agent_name: str) -> dict:
+    """Trigger a registered agent to run on-demand.
+    
+    Args:
+        agent_name: Name of the agent to execute
+        
+    Returns:
+        Execution result with success status and metrics
+    """
+    try:
+        orchestrator = app.state.orchestrator
+        monitor = app.state.monitor
+        
+        logger.info(f"Triggering on-demand execution of agent: {agent_name}")
+        
+        result = await orchestrator.execute_agent(agent_name)
+        
+        if result:
+            # Record event in monitor
+            monitor.record_event(
+                EventType.AGENT_COMPLETED if result.success else EventType.AGENT_FAILED,
+                agent_name=agent_name,
+                message=result.message,
+                metadata=result.metrics or {},
+            )
+            
+            # Update health status
+            monitor.update_agent_health(agent_name, success=result.success, error=result.error)
+            
+            return {
+                "agent": agent_name,
+                "success": result.success,
+                "message": result.message,
+                "metrics": result.metrics or {},
+                "error": result.error,
+                "timestamp": result.timestamp.isoformat(),
+            }
+        else:
+            raise HTTPException(status_code=404, detail=f"Agent '{agent_name}' not found or already running")
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error triggering agent {agent_name}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error triggering agent: {str(e)}")
+
+
+@app.post("/orchestrator/agent/{agent_name}/enable", tags=["orchestrator"])
+async def enable_agent_endpoint(agent_name: str) -> dict:
+    """Enable a registered agent.
+    
+    Args:
+        agent_name: Name of the agent to enable
+        
+    Returns:
+        Success status
+    """
+    try:
+        orchestrator = app.state.orchestrator
+        if orchestrator.enable_agent(agent_name):
+            return {"agent": agent_name, "enabled": True}
+        else:
+            raise HTTPException(status_code=404, detail=f"Agent '{agent_name}' not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error enabling agent {agent_name}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error enabling agent: {str(e)}")
+
+
+@app.post("/orchestrator/agent/{agent_name}/disable", tags=["orchestrator"])
+async def disable_agent_endpoint(agent_name: str) -> dict:
+    """Disable a registered agent.
+    
+    Args:
+        agent_name: Name of the agent to disable
+        
+    Returns:
+        Success status
+    """
+    try:
+        orchestrator = app.state.orchestrator
+        if orchestrator.disable_agent(agent_name):
+            return {"agent": agent_name, "enabled": False}
+        else:
+            raise HTTPException(status_code=404, detail=f"Agent '{agent_name}' not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error disabling agent {agent_name}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error disabling agent: {str(e)}")

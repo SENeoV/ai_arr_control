@@ -9,8 +9,10 @@ from loguru import logger
 from db.session import SessionLocal
 from db.models import IndexerHealth
 
+from agents.base import Agent, AgentResult, AgentPriority
 
-class IndexerAutoHealAgent:
+
+class IndexerAutoHealAgent(Agent):
     """Agent that monitors indexer health and automatically disables failures.
     
     This is the main autonomous healing agent. On each execution cycle, it:
@@ -29,20 +31,24 @@ class IndexerAutoHealAgent:
     """
 
     def __init__(self, radarr: Any, sonarr: Any, control_agent: Any) -> None:
+        super().__init__(
+            name="IndexerAutoHealAgent",
+            priority=AgentPriority.CRITICAL,
+            enabled=True,
+        )
         self.radarr = radarr
         self.sonarr = sonarr
         self.control = control_agent
         logger.info("Initialized IndexerAutoHealAgent")
 
-    async def run(self) -> None:
+    async def run(self) -> AgentResult:
         """Execute autoheal cycle: test indexers, log results, disable failures.
         
         This method is called periodically (e.g., every 2 hours) by the
         application scheduler. It performs the complete heal cycle atomically,
         committing all database changes at the end.
         
-        Failures in individual indexer tests do not stop the cycle; all
-        indexers are tested and results are recorded regardless.
+        Returns an AgentResult with detailed metrics and status.
         """
         logger.info("Starting autoheal cycle")
         
@@ -115,11 +121,35 @@ class IndexerAutoHealAgent:
             # Commit all database changes
             try:
                 await session.commit()
-                logger.info(
+                message = (
                     f"Autoheal cycle completed: {total_tested} tested, "
                     f"{total_passed} passed, {total_failed} failed, "
                     f"{total_disabled} disabled"
                 )
+                logger.info(message)
+                
+                return AgentResult(
+                    success=True,
+                    message=message,
+                    metrics={
+                        "total_tested": total_tested,
+                        "total_passed": total_passed,
+                        "total_failed": total_failed,
+                        "total_disabled": total_disabled,
+                    }
+                )
             except Exception as e:
                 logger.error(f"Failed to commit autoheal results to database: {e}")
                 await session.rollback()
+                
+                return AgentResult(
+                    success=False,
+                    message="Autoheal cycle failed during database commit",
+                    error=str(e),
+                    metrics={
+                        "total_tested": total_tested,
+                        "total_passed": total_passed,
+                        "total_failed": total_failed,
+                        "total_disabled": total_disabled,
+                    }
+                )

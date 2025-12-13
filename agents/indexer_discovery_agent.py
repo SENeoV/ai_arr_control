@@ -7,15 +7,16 @@ either a JSON array of indexer objects or a plain text list of base URLs.
 This agent is conservative by default (must enable `discovery_add_to_prowlarr`
 in settings to allow automatic adds).
 """
-from typing import Any, List
+from typing import Any, List, Dict
 import json
 import httpx
 from loguru import logger
 
 from config.settings import settings
+from agents.base import Agent, AgentResult, AgentPriority
 
 
-class IndexerDiscoveryAgent:
+class IndexerDiscoveryAgent(Agent):
     """Agent that discovers potential indexers from external sources.
 
     Args:
@@ -23,29 +24,64 @@ class IndexerDiscoveryAgent:
     """
 
     def __init__(self, prowlarr_service: Any = None) -> None:
+        super().__init__(
+            name="IndexerDiscoveryAgent",
+            priority=AgentPriority.LOW,
+            enabled=settings.discovery_enabled,
+        )
         self.prowlarr = prowlarr_service
         logger.info("Initialized IndexerDiscoveryAgent")
 
-    async def run(self) -> None:
-        """Run discovery against all configured sources."""
+    async def run(self) -> AgentResult:
+        """Run discovery against all configured sources.
+        
+        Returns:
+            AgentResult with discovery metrics and status
+        """
         if not settings.discovery_enabled:
             logger.info("Discovery is disabled in settings; skipping")
-            return
+            return AgentResult(
+                success=True,
+                message="Discovery disabled in configuration"
+            )
 
         sources = settings.discovery_sources or []
         if not sources:
             logger.info("No discovery sources configured; skipping")
-            return
+            return AgentResult(
+                success=True,
+                message="No discovery sources configured"
+            )
 
         logger.info(f"Running indexer discovery against {len(sources)} sources")
+        
+        total_discovered = 0
+        failed_sources = 0
 
         for src in sources:
             try:
-                await self._process_source(src)
+                discovered = await self._process_source(src)
+                total_discovered += discovered
             except Exception as e:
                 logger.error(f"Error processing discovery source {src}: {e}")
+                failed_sources += 1
 
-    async def _process_source(self, url: str) -> None:
+        message = f"Discovery complete: {total_discovered} indexers found"
+        success = failed_sources == 0 if sources else True
+        
+        return AgentResult(
+            success=success,
+            message=message,
+            metrics={
+                "total_discovered": total_discovered,
+                "sources_processed": len(sources) - failed_sources,
+                "failed_sources": failed_sources,
+            },
+            error=f"{failed_sources} sources failed" if failed_sources > 0 else None
+        )
+
+    async def _process_source(self, url: str) -> int:
+        """Process a discovery source and return count of discovered indexers."""
         logger.debug(f"Fetching discovery source: {url}")
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(url)
@@ -86,6 +122,8 @@ class IndexerDiscoveryAgent:
             # Optionally add to Prowlarr
             if settings.discovery_add_to_prowlarr and self.prowlarr:
                 await self._add_to_prowlarr(candidates)
+            
+            return len(candidates)
 
     async def _add_to_prowlarr(self, candidates: List[dict]) -> None:
         for c in candidates:

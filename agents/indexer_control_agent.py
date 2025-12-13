@@ -7,8 +7,10 @@ This agent is used by the autoheal agent to remediate failing indexers.
 from typing import Any
 from loguru import logger
 
+from agents.base import Agent, AgentResult, AgentPriority
 
-class IndexerControlAgent:
+
+class IndexerControlAgent(Agent):
     """Provides primitive control actions for indexers (disable/enable).
     
     This agent intentionally keeps logic small and delegates API calls to
@@ -23,9 +25,28 @@ class IndexerControlAgent:
     """
 
     def __init__(self, radarr: Any, sonarr: Any) -> None:
+        super().__init__(
+            name="IndexerControlAgent",
+            priority=AgentPriority.HIGH,
+            enabled=True,
+        )
         self.radarr = radarr
         self.sonarr = sonarr
         logger.info("Initialized IndexerControlAgent")
+
+    async def run(self) -> AgentResult:
+        """Control agent run method (no-op for manual control).
+        
+        This agent is primarily called manually by other agents.
+        When run automatically, it simply reports ready status.
+        
+        Returns:
+            AgentResult with ready status
+        """
+        return AgentResult(
+            success=True,
+            message="IndexerControlAgent ready for manual operations"
+        )
 
     async def disable_indexer(self, service: Any, indexer: dict) -> None:
         """Disable an indexer via the service API and log the action.

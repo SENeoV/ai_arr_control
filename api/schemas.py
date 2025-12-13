@@ -124,6 +124,47 @@ class AgentStatusResponse(BaseModel):
     agents: Dict[str, str]
 
 
+class AgentMetrics(BaseModel):
+    """Agent execution metrics."""
+    total_runs: int
+    successful_runs: int
+    failed_runs: int
+    success_rate: str
+    average_duration: str
+    last_run: Optional[str] = None
+    last_error: Optional[str] = None
+
+
+class OrchestratorStatusResponse(BaseModel):
+    """Orchestrator status response."""
+    name: str
+    running: bool
+    agents: Dict[str, Dict[str, Any]]
+    schedules: Dict[str, Dict[str, Any]]
+    metrics: Dict[str, Any]
+
+
+class AgentHealthStatus(BaseModel):
+    """Health status of an agent."""
+    agent_name: str
+    is_healthy: bool
+    last_run: Optional[str] = None
+    last_error: Optional[str] = None
+    consecutive_failures: int
+    uptime_percentage: str
+
+
+class MonitorStatusResponse(BaseModel):
+    """Monitor status response."""
+    total_agents: int
+    healthy_agents: int
+    unhealthy_agents: int
+    health_percentage: float
+    total_events_logged: int
+    recent_events: List[Dict[str, Any]]
+    agent_health: Dict[str, Dict[str, Any]]
+
+
 class ErrorResponse(BaseModel):
     """Standard error response."""
     detail: str

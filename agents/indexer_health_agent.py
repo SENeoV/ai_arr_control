@@ -7,8 +7,10 @@ This agent is read-only and only logs results without making changes.
 from typing import Any
 from loguru import logger
 
+from agents.base import Agent, AgentResult, AgentPriority
 
-class IndexerHealthAgent:
+
+class IndexerHealthAgent(Agent):
     """Agent that performs periodic health checks against indexers.
     
     This agent:
@@ -26,26 +28,56 @@ class IndexerHealthAgent:
     """
 
     def __init__(self, radarr: Any, sonarr: Any) -> None:
+        super().__init__(
+            name="IndexerHealthAgent",
+            priority=AgentPriority.HIGH,
+            enabled=True,
+        )
         self.radarr = radarr
         self.sonarr = sonarr
         logger.info("Initialized IndexerHealthAgent")
 
-    async def run(self) -> None:
-        """Run health checks for Radarr and Sonarr indexers and log results.
+    async def run(self) -> AgentResult:
+        """Run health checks for Radarr and Sonarr indexers.
         
-        Iterates through all configured indexers in both services,
-        attempts to test connectivity, and logs the results.
-        Failures are logged but do not cause the agent to fail.
+        Returns an AgentResult with success status and detailed metrics.
+        Individual indexer failures do not prevent the cycle from completing.
         """
         logger.info("Starting health check cycle")
         
         radarr_success = await self._check_service("Radarr", self.radarr)
         sonarr_success = await self._check_service("Sonarr", self.sonarr)
         
-        if radarr_success and sonarr_success:
-            logger.info("Health check cycle completed successfully")
+        success = radarr_success and sonarr_success
+        message = "Health check cycle completed"
+        
+        if success:
+            logger.info(f"{message} successfully")
+            return AgentResult(
+                success=True,
+                message=f"{message} successfully",
+                metrics={
+                    "radarr_ok": radarr_success,
+                    "sonarr_ok": sonarr_success,
+                }
+            )
         else:
-            logger.warning("Health check cycle completed with some failures")
+            error_details = []
+            if not radarr_success:
+                error_details.append("Radarr check failed")
+            if not sonarr_success:
+                error_details.append("Sonarr check failed")
+            
+            logger.warning(f"{message} with failures")
+            return AgentResult(
+                success=False,
+                message=f"{message} with failures",
+                error="; ".join(error_details),
+                metrics={
+                    "radarr_ok": radarr_success,
+                    "sonarr_ok": sonarr_success,
+                }
+            )
 
     async def _check_service(self, service_name: str, service: Any) -> bool:
         """Check health of all indexers in a service.
