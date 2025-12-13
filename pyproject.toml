@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-arr-control"
-version = "0.3.0"
+version = "0.4.0"
 description = "Autonomous AI agent platform for intelligent indexer management and health monitoring in Radarr, Sonarr, and Prowlarr"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -41,7 +41,8 @@ dependencies = [
     "aiosqlite>=0.20",
     "apscheduler>=3.10",
     "loguru>=0.7",
-    "python-dotenv>=1.0"
+    "python-dotenv>=1.0",
+    "click>=8.0"
 ]
 
 [project.optional-dependencies]
@@ -59,6 +60,9 @@ Homepage = "https://github.com/yourusername/ai_arr_control"
 Documentation = "https://github.com/yourusername/ai_arr_control#readme"
 Repository = "https://github.com/yourusername/ai_arr_control.git"
 Issues = "https://github.com/yourusername/ai_arr_control/issues"
+
+[project.scripts]
+ai-arr-control = "tools.cli:main"
 
 [tool.setuptools]
 packages = ["agents", "config", "core", "db", "services"]

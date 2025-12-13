@@ -29,6 +29,20 @@ from agents.indexer_autoheal_agent import IndexerAutoHealAgent
 from agents.indexer_discovery_agent import IndexerDiscoveryAgent
 from db.session import init_db, close_db, SessionLocal
 from db.models import IndexerHealth
+from api.schemas import (
+    HealthResponse,
+    ServiceInfoResponse,
+    ServiceIndexersResponse,
+    TestIndexerResponse,
+    IndexerActionResponse,
+    IndexerStatsResponse,
+    IndexerStatsItem,
+    AgentRunResponse,
+    HealthHistoryResponse,
+    DetailedStatsResponse,
+    AgentStatusResponse,
+)
+from core.monitoring import metrics_collector, event_log
 
 
 def _create_scheduler() -> AsyncIOScheduler:
@@ -188,27 +202,27 @@ app = FastAPI(
 
 
 @app.get("/health", tags=["monitoring"])
-def health() -> dict:
+async def health() -> HealthResponse:
     """Health check endpoint.
     
     Returns:
         Simple status indicator for monitoring and load balancer health checks
     """
-    return {"status": "ok", "service": settings.app_name}
+    return HealthResponse(status="ok", service=settings.app_name)
 
 
 @app.get("/", tags=["info"])
-def root() -> dict:
+async def root() -> ServiceInfoResponse:
     """Root endpoint with basic service information.
     
     Returns:
         Service metadata and available endpoints
     """
-    return {
-        "service": settings.app_name,
-        "version": "0.3.0",
-        "description": "AI-powered autonomous indexer management and health monitoring",
-        "endpoints": {
+    return ServiceInfoResponse(
+        service=settings.app_name,
+        version="0.4.0",
+        description="AI-powered autonomous indexer management and health monitoring",
+        endpoints={
             "monitoring": {
                 "health": "/health",
                 "stats": "/indexers/stats",
@@ -225,7 +239,8 @@ def root() -> dict:
             },
             "agents": {
                 "run_health_check": "POST /agents/health/run",
-                "run_autoheal": "POST /agents/autoheal/run"
+                "run_autoheal": "POST /agents/autoheal/run",
+                "run_discovery": "POST /agents/discovery/run"
             },
             "docs": {
                 "swagger": "/docs",
@@ -233,7 +248,7 @@ def root() -> dict:
                 "openapi": "/openapi.json"
             }
         }
-    }
+    )
 
 
 @app.get("/indexers", tags=["indexers"])
@@ -351,7 +366,7 @@ async def get_service_indexers(service: str) -> dict:
 
 
 @app.post("/indexers/{service}/{indexer_id}/test", tags=["indexers"])
-async def test_indexer(service: str, indexer_id: int) -> dict:
+async def test_indexer(service: str, indexer_id: int) -> TestIndexerResponse:
     """Test a specific indexer's connectivity.
     
     Args:
@@ -365,22 +380,57 @@ async def test_indexer(service: str, indexer_id: int) -> dict:
         raise HTTPException(status_code=400, detail=f"Cannot test indexers on {service}")
     
     try:
-        svc = getattr(app.state, service)
+        svc, _ = await _get_and_validate_indexer(service, indexer_id)
         await svc.test_indexer(indexer_id)
         logger.info(f"Successfully tested indexer {indexer_id} on {service}")
-        return {"success": True, "service": service, "indexer_id": indexer_id}
+        return TestIndexerResponse(success=True, service=service, indexer_id=indexer_id)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.warning(f"Failed to test indexer {indexer_id} on {service}: {e}")
-        return {
-            "success": False,
-            "service": service,
-            "indexer_id": indexer_id,
-            "error": str(e)
-        }
+        return TestIndexerResponse(
+            success=False,
+            service=service,
+            indexer_id=indexer_id,
+            error=str(e)
+        )
+
+
+async def _get_and_validate_indexer(service_name: str, indexer_id: int) -> tuple:
+    """Helper to validate service and get indexer object.
+    
+    Args:
+        service_name: Service name (radarr, sonarr, prowlarr)
+        indexer_id: ID of the indexer
+        
+    Returns:
+        Tuple of (service, indexer_dict)
+        
+    Raises:
+        HTTPException: If service invalid or indexer not found
+    """
+    if service_name not in ("radarr", "sonarr", "prowlarr"):
+        raise HTTPException(status_code=400, detail=f"Unknown service: {service_name}")
+    
+    try:
+        svc = getattr(app.state, service_name)
+        indexers = await svc.get_indexers()
+        indexer = next((i for i in indexers if i.get("id") == indexer_id), None)
+        if not indexer:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Indexer {indexer_id} not found on {service_name}"
+            )
+        return svc, indexer
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching indexers from {service_name}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error fetching {service_name} indexers: {str(e)}")
 
 
 @app.post("/indexers/{service}/{indexer_id}/disable", tags=["indexers"])
-async def disable_indexer(service: str, indexer_id: int) -> dict:
+async def disable_indexer(service: str, indexer_id: int) -> IndexerActionResponse:
     """Disable a specific indexer.
     
     Args:
@@ -391,30 +441,28 @@ async def disable_indexer(service: str, indexer_id: int) -> dict:
         Result of disable operation
     """
     if service not in ("radarr", "sonarr"):
-        raise HTTPException(status_code=400, detail=f"Cannot manage indexers on {service}")
+        raise HTTPException(status_code=400, detail="Indexer management only supported for radarr and sonarr")
     
     try:
-        if service not in ("radarr", "sonarr"):
-            raise HTTPException(status_code=400, detail=f"Cannot manage indexers on {service}")
-
-        svc = getattr(app.state, service)
-        # Locate indexer object
-        indexers = await svc.get_indexers()
-        indexer = next((i for i in indexers if i.get("id") == indexer_id), None)
-        if not indexer:
-            raise HTTPException(status_code=404, detail=f"Indexer {indexer_id} not found on {service}")
-
+        svc, indexer = await _get_and_validate_indexer(service, indexer_id)
         control_agent = app.state.control_agent
         await control_agent.disable_indexer(svc, indexer)
         logger.info(f"Disabled indexer {indexer_id} on {service}")
-        return {"success": True, "service": service, "indexer_id": indexer_id, "action": "disabled"}
+        return IndexerActionResponse(
+            success=True,
+            service=service,
+            indexer_id=indexer_id,
+            action="disabled"
+        )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error disabling indexer {indexer_id} on {service}: {e}")
         raise HTTPException(status_code=500, detail=f"Error disabling indexer: {str(e)}")
 
 
 @app.post("/indexers/{service}/{indexer_id}/enable", tags=["indexers"])
-async def enable_indexer(service: str, indexer_id: int) -> dict:
+async def enable_indexer(service: str, indexer_id: int) -> IndexerActionResponse:
     """Enable a specific indexer.
     
     Args:
@@ -425,29 +473,28 @@ async def enable_indexer(service: str, indexer_id: int) -> dict:
         Result of enable operation
     """
     if service not in ("radarr", "sonarr"):
-        raise HTTPException(status_code=400, detail=f"Cannot manage indexers on {service}")
+        raise HTTPException(status_code=400, detail="Indexer management only supported for radarr and sonarr")
     
     try:
-        if service not in ("radarr", "sonarr"):
-            raise HTTPException(status_code=400, detail=f"Cannot manage indexers on {service}")
-
-        svc = getattr(app.state, service)
-        indexers = await svc.get_indexers()
-        indexer = next((i for i in indexers if i.get("id") == indexer_id), None)
-        if not indexer:
-            raise HTTPException(status_code=404, detail=f"Indexer {indexer_id} not found on {service}")
-
+        svc, indexer = await _get_and_validate_indexer(service, indexer_id)
         control_agent = app.state.control_agent
         await control_agent.enable_indexer(svc, indexer)
         logger.info(f"Enabled indexer {indexer_id} on {service}")
-        return {"success": True, "service": service, "indexer_id": indexer_id, "action": "enabled"}
+        return IndexerActionResponse(
+            success=True,
+            service=service,
+            indexer_id=indexer_id,
+            action="enabled"
+        )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error enabling indexer {indexer_id} on {service}: {e}")
         raise HTTPException(status_code=500, detail=f"Error enabling indexer: {str(e)}")
 
 
 @app.post("/agents/health/run", tags=["agents"])
-async def run_health_agent() -> dict:
+async def run_health_agent() -> AgentRunResponse:
     """Manually trigger the health check agent to run immediately.
     
     Returns:
@@ -457,14 +504,18 @@ async def run_health_agent() -> dict:
         health_agent = app.state.health_agent
         logger.info("Manually triggering health agent")
         await health_agent.run()
-        return {"success": True, "agent": "health_agent", "message": "Health check completed"}
+        return AgentRunResponse(
+            success=True,
+            agent="health_agent",
+            message="Health check completed"
+        )
     except Exception as e:
         logger.error(f"Error running health agent: {e}")
         raise HTTPException(status_code=500, detail=f"Error running health agent: {str(e)}")
 
 
 @app.post("/agents/autoheal/run", tags=["agents"])
-async def run_autoheal_agent() -> dict:
+async def run_autoheal_agent() -> AgentRunResponse:
     """Manually trigger the autoheal agent to run immediately.
     
     Returns:
@@ -474,20 +525,28 @@ async def run_autoheal_agent() -> dict:
         autoheal_agent = app.state.autoheal_agent
         logger.info("Manually triggering autoheal agent")
         await autoheal_agent.run()
-        return {"success": True, "agent": "autoheal_agent", "message": "Autoheal completed"}
+        return AgentRunResponse(
+            success=True,
+            agent="autoheal_agent",
+            message="Autoheal completed"
+        )
     except Exception as e:
         logger.error(f"Error running autoheal agent: {e}")
         raise HTTPException(status_code=500, detail=f"Error running autoheal agent: {str(e)}")
 
 
 @app.post("/agents/discovery/run", tags=["agents"])
-async def run_discovery_agent() -> dict:
+async def run_discovery_agent() -> AgentRunResponse:
     """Manually trigger the discovery agent to run immediately."""
     try:
         discovery_agent = app.state.discovery_agent
         logger.info("Manually triggering discovery agent")
         await discovery_agent.run()
-        return {"success": True, "agent": "discovery_agent", "message": "Discovery run completed"}
+        return AgentRunResponse(
+            success=True,
+            agent="discovery_agent",
+            message="Discovery run completed"
+        )
     except Exception as e:
         logger.error(f"Error running discovery agent: {e}")
         raise HTTPException(status_code=500, detail=f"Error running discovery agent: {str(e)}")
@@ -635,7 +694,7 @@ async def get_detailed_stats() -> dict:
 
 
 @app.get("/agents/status", tags=["agents"])
-async def get_agents_status() -> dict:
+async def get_agents_status() -> AgentStatusResponse:
     """Get status of all agents and scheduler.
     
     Returns:
@@ -654,18 +713,47 @@ async def get_agents_status() -> dict:
                     "trigger": str(job.trigger),
                 })
         
-        return {
-            "scheduler": {
+        return AgentStatusResponse(
+            scheduler={
                 "running": scheduler.running,
                 "jobs_count": len(jobs),
                 "jobs": jobs
             },
-            "agents": {
+            agents={
                 "health_agent": "active",
                 "control_agent": "active",
                 "autoheal_agent": "active"
             }
-        }
+        )
     except Exception as e:
         logger.error(f"Error getting agent status: {e}")
         raise HTTPException(status_code=500, detail=f"Error getting agent status: {str(e)}")
+
+
+@app.get("/metrics", tags=["monitoring"])
+async def get_metrics() -> dict:
+    """Get application metrics and health indicators.
+    
+    Returns:
+        Current metrics including uptime, operation counts, and success rates
+    """
+    return metrics_collector.get_metrics()
+
+
+@app.get("/events", tags=["monitoring"])
+async def get_recent_events(limit: int = 50) -> dict:
+    """Get recent system events from audit log.
+    
+    Args:
+        limit: Maximum number of events to return
+        
+    Returns:
+        Recent events from the event log
+    """
+    events = event_log.get_recent_events(limit=limit)
+    return {
+        "timestamp": datetime.utcnow().isoformat(),
+        "events_count": len(events),
+        "events": events
+    }
+

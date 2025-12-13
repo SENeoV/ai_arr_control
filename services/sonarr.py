@@ -7,6 +7,7 @@ Sonarr is the TV show download management application in the Arr ecosystem.
 from typing import Any, List
 from loguru import logger
 from core.http import ArrHttpClient
+from core.utils import retry
 
 
 class SonarrService:
@@ -25,17 +26,24 @@ class SonarrService:
         self.client = client
         logger.info("Initialized SonarrService")
 
+    @retry(max_attempts=3, delay=0.5)
     async def get_indexers(self) -> List[dict]:
         """Fetch list of all indexers configured in Sonarr.
+        
+        Retries up to 3 times with exponential backoff on failure.
         
         Returns:
             List of indexer dictionaries containing id, name, enable status, etc.
             
         Raises:
-            httpx.HTTPStatusError: If API request fails
+            httpx.HTTPStatusError: If API request fails after all retries
         """
         logger.debug("Fetching Sonarr indexers")
         indexers = await self.client.get("/api/v3/indexer")
+        
+        if not isinstance(indexers, list):
+            raise ValueError(f"Expected list of indexers, got {type(indexers)}")
+        
         logger.debug(f"Found {len(indexers)} Sonarr indexers")
         return indexers
 
@@ -43,7 +51,7 @@ class SonarrService:
         """Test connectivity and functionality of a specific indexer.
         
         Sends a test request to the indexer to verify it's reachable
-        and responding correctly.
+        and responding correctly. Does not retry.
         
         Args:
             indexer_id: ID of the indexer to test
@@ -55,7 +63,8 @@ class SonarrService:
             httpx.HTTPStatusError: If the test fails
         """
         logger.debug(f"Testing Sonarr indexer {indexer_id}")
-        return await self.client.post(f"/api/v3/indexer/{indexer_id}/test")
+        result = await self.client.post(f"/api/v3/indexer/{indexer_id}/test")
+        return result
 
     async def update_indexer(self, indexer: dict) -> Any:
         """Update indexer configuration.
@@ -74,5 +83,9 @@ class SonarrService:
             httpx.HTTPStatusError: If update fails
         """
         indexer_id = indexer.get("id")
+        if not isinstance(indexer_id, int):
+            raise ValueError(f"Indexer missing valid 'id' field: {indexer}")
+        
         logger.debug(f"Updating Sonarr indexer {indexer_id}")
         return await self.client.put(f"/api/v3/indexer/{indexer_id}", json=indexer)
+

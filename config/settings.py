@@ -111,9 +111,34 @@ class Settings(BaseSettings):
         
         Call this method at application startup to ensure all external
         services are properly configured.
+        
+        Raises:
+            ValueError: If configuration is invalid
         """
-        # This method can be extended with connectivity checks in the future
-        pass
+        # Validate discovery configuration if enabled
+        if self.discovery_enabled:
+            if not self.discovery_sources:
+                raise ValueError(
+                    "discovery_enabled=True but discovery_sources is empty. "
+                    "Either disable discovery or provide sources."
+                )
+            # Parse discovery sources from comma-separated string if needed
+            sources = self.discovery_sources
+            if isinstance(sources, str):
+                sources = [s.strip() for s in sources.split(",") if s.strip()]
+            if not sources:
+                raise ValueError("discovery_sources contains no valid URLs")
+        
+        # Validate scheduler interval
+        if self.discovery_interval_hours < 1:
+            raise ValueError("discovery_interval_hours must be >= 1")
+        
+        # Validate that database path is writable (for SQLite)
+        if self.database_url.startswith("sqlite+aiosqlite://"):
+            db_path = self.database_url.replace("sqlite+aiosqlite:///", "")
+            db_dir = Path(db_path).parent
+            if not db_dir.exists():
+                db_dir.mkdir(parents=True, exist_ok=True)
 
 
 settings = Settings()

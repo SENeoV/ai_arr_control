@@ -1,561 +1,509 @@
 # AI Arr Control
 
-**Autonomous AI agent platform for intelligent indexer management and health monitoring in Radarr, Sonarr, and Prowlarr.**
+> **Autonomous agent platform for intelligent indexer health monitoring and remediation in Radarr, Sonarr, and Prowlarr**
 
-AI Arr Control is a production-grade system that automatically monitors media indexer health across your Radarr and Sonarr installations, tests connectivity, and intelligently disables broken indexers to prevent stalled downloads and search failures. Built with modern Python async patterns, comprehensive error handling, and professional-grade logging.
-
----
+AI Arr Control is a production-ready system that continuously monitors your media indexer health, automatically detects failing indexers, and intelligently disables them to prevent download stalls and search failures. Built with modern async Python, comprehensive error handling, and professional observability.
 
 ## Features
 
-### Core Functionality
-- **Autonomous Health Monitoring**: Periodic health checks of all configured indexers (every 30 minutes)
-- **Automated Healing**: Automatically disables failing indexers to prevent service degradation (every 2 hours)
-- **Persistent Audit Trail**: Stores all health check results in database for trend analysis and debugging
-- **Event Logging**: Structured, professional logging with timestamps, service names, and error messages
-- **FastAPI Foundation**: Lightweight, async-first architecture with built-in health endpoints and API documentation
+### Core Capabilities
+- ✅ **Autonomous Monitoring**: Periodic health checks every 30 minutes with automatic indexer testing
+- ✅ **Intelligent Remediation**: Automatically disables failing indexers to prevent service degradation
+- ✅ **Persistent Audit Trail**: Complete history of health checks and changes in SQLite/PostgreSQL
+- ✅ **Event Logging**: Structured event log with detailed health metrics and diagnostics
+- ✅ **RESTful API**: Full-featured HTTP API for manual control and integration
+- ✅ **Async-First**: Built on FastAPI with proper async/await patterns for high concurrency
+- ✅ **Type-Safe**: Full type hints throughout for IDE support and static analysis
+- ✅ **Production-Ready**: Error handling, logging, configuration validation, and graceful shutdown
 
-### Production-Ready
-- ✅ Comprehensive error handling and graceful degradation
-- ✅ Proper resource management (async context managers, connection pooling)
-- ✅ Type hints throughout codebase for IDE support and type safety
-- ✅ Comprehensive docstrings and inline comments
-- ✅ Database migration ready (tested with SQLite, PostgreSQL-compatible)
-- ✅ Configuration validation at startup
-- ✅ Extensible agent framework for custom behaviors
-- ✅ Full async/await pattern for non-blocking operations
-
----
+### Additional Features  
+- **Metrics & Observability**: Track success rates, uptime, and operation history
+- **Discovery Support**: Optional indexer discovery from external sources
+- **CLI Tools**: Command-line interface for administrative tasks
+- **Scheduler Control**: Real-time status of background jobs and agents
+- **Multiple Databases**: Works with SQLite, PostgreSQL, MySQL, and other SQLAlchemy backends
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                    FastAPI Application                       │
-│  ┌────────────────────────────────────────────────────────┐  │
-│  │  IndexerHealthAgent (every 30 min)                     │  │
-│  │  ✓ Read-only health checks                            │  │
-│  │  ✓ Tests all indexers in Radarr & Sonarr             │  │
-│  │  ✓ Logs results (no database writes)                 │  │
-│  └────────────────────────────────────────────────────────┘  │
-│                                                               │
-│  ┌────────────────────────────────────────────────────────┐  │
-│  │  IndexerAutoHealAgent (every 2 hours)                  │  │
-│  │  ✓ Tests all indexers thoroughly                      │  │
-│  │  ✓ Records results in database                        │  │
-│  │  ✓ Automatically disables failing indexers            │  │
-│  │  ✓ Delegates control to IndexerControlAgent          │  │
-│  └────────────────────────────────────────────────────────┘  │
-│                                                               │
-│  ┌────────────────────────────────────────────────────────┐  │
-│  │  Database Layer (SQLite / PostgreSQL-compatible)       │  │
-│  │  ✓ Stores health check history                        │  │
-│  │  ✓ Enables trend analysis and debugging              │  │
-│  └────────────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────┘
-              ↓                    ↓                    ↓
-         ┌─────────┐         ┌─────────┐         ┌──────────┐
-         │  Radarr │         │  Sonarr │         │ Prowlarr │
-         │ (Movies)│         │  (TV)   │         │(Indexers)│
-         └─────────┘         └─────────┘         └──────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                  FastAPI Application (0.4.0)                │
+│                                                             │
+│  Agents:                                                   │
+│  ├─ IndexerHealthAgent (every 30 min) → read-only checks  │
+│  ├─ IndexerAutoHealAgent (every 2 hrs) → remediation      │
+│  ├─ IndexerControlAgent → state changes                   │
+│  └─ IndexerDiscoveryAgent → new indexer detection         │
+│                                                             │
+│  Services:                                                  │
+│  ├─ RadarrService → Radarr API wrapper                    │
+│  ├─ SonarrService → Sonarr API wrapper                    │
+│  └─ ProwlarrService → Prowlarr API wrapper                │
+│                                                             │
+│  Storage:                                                   │
+│  └─ SQLAlchemy ORM → IndexerHealth audit table            │
+└─────────────────────────────────────────────────────────────┘
+         ↓                      ↓                      ↓
+    ┌──────────┐          ┌──────────┐          ┌──────────┐
+    │  Radarr  │          │  Sonarr  │          │ Prowlarr │
+    │ (Movies) │          │  (TV)    │          │(Indexers)│
+    └──────────┘          └──────────┘          └──────────┘
 ```
-
-### Component Overview
-
-| Component | Purpose | Frequency |
-|-----------|---------|-----------|
-| **IndexerHealthAgent** | Read-only health monitoring | Every 30 minutes |
-| **IndexerAutoHealAgent** | Comprehensive testing, database logging, auto-remediation | Every 2 hours |
-| **IndexerControlAgent** | Low-level primitives for enabling/disabling indexers | On-demand |
-| **Services Layer** | HTTP wrappers for Radarr, Sonarr, Prowlarr APIs | Event-driven |
-| **Database** | SQLite-based audit trail and health history | Event-driven |
-
----
 
 ## Quick Start
 
 ### Prerequisites
-
-- **Python 3.11+** (tested with 3.11+)
-- **Radarr** instance with API key (required)
-- **Sonarr** instance with API key (required)
-- **Prowlarr** instance with API key (optional but recommended)
-
-All Arr services must be accessible from the host running AI Arr Control.
+- Python 3.11+ (tested with 3.11, 3.12, 3.13)
+- Radarr instance with API key (required)
+- Sonarr instance with API key (required)
+- Prowlarr instance with API key (required)
 
 ### Installation (5 minutes)
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/yourusername/ai_arr_control.git
-   cd ai_arr_control
-   ```
+```bash
+# Clone and enter directory
+git clone https://github.com/yourusername/ai_arr_control.git
+cd ai_arr_control
 
-2. **Create virtual environment:**
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
 
-3. **Install dependencies:**
-   ```bash
-   pip install -e .
-   ```
+# Install package
+pip install -e ".[dev]"  # Include dev tools like pytest
 
-4. **Configure environment:**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your Radarr, Sonarr, Prowlarr URLs and API keys
-   nano .env
-   ```
+# Configure environment
+cp .env.example .env
+nano .env  # Edit with your Radarr, Sonarr, Prowlarr URLs and API keys
 
-5. **Run the application:**
-   ```bash
-   uvicorn main:app --host 0.0.0.0 --port 8000
-   ```
+# Initialize database
+python -m tools.cli initdb
 
-The application will:
-- Initialize the database
-- Connect to all configured Arr services
-- Start the scheduler with both agents
-- Listen on `http://localhost:8000`
+# Run the application
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
 
-Check health: `curl http://localhost:8000/health`
+Access the API at `http://localhost:8000`
 
----
+**Health check**: `curl http://localhost:8000/health`
+
+**API documentation**: `http://localhost:8000/docs` (Swagger UI)
 
 ## Configuration
 
 ### Environment Variables
 
-All configuration is loaded from the `.env` file or environment variables.
+All settings are loaded from `.env` file or environment variables (case-insensitive).
 
-#### Required Variables
+#### Required Configuration
 
 ```env
-# Radarr (Movie Indexer Management)
+# Radarr Service
 RADARR_URL=http://radarr:7878
-RADARR_API_KEY=your_radarr_api_key_here
+RADARR_API_KEY=your_api_key
 
-# Sonarr (TV Show Indexer Management)
+# Sonarr Service
 SONARR_URL=http://sonarr:8989
-SONARR_API_KEY=your_sonarr_api_key_here
+SONARR_API_KEY=your_api_key
 
-# Prowlarr (Unified Indexer Manager - required but may have limited use)
+# Prowlarr Service
 PROWLARR_URL=http://prowlarr:9696
-PROWLARR_API_KEY=your_prowlarr_api_key_here
+PROWLARR_API_KEY=your_api_key
 ```
 
-#### Optional Variables
+#### Optional Configuration
 
 ```env
 # Application Settings
-APP_NAME=AI Arr Control           # Display name (default: AI Arr Control)
-DEBUG=false                       # Enable debug logging (default: false)
+APP_NAME=AI Arr Control
+DEBUG=false
 
-# Database (defaults to SQLite in db/app.db)
-# For production, consider PostgreSQL:
+# Database (defaults to SQLite)
 DATABASE_URL=sqlite+aiosqlite:///./db/app.db
-# DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/ai_arr_control
+# For PostgreSQL: postgresql+asyncpg://user:password@localhost:5432/dbname
+
+# Indexer Discovery
+DISCOVERY_ENABLED=false
+DISCOVERY_SOURCES=https://example.com/indexers.json
+DISCOVERY_INTERVAL_HOURS=24
+DISCOVERY_ADD_TO_PROWLARR=false
 ```
 
-### How to Get API Keys
+### Getting API Keys
 
-1. **Radarr**: Settings → General → Security → API Key
-2. **Sonarr**: Settings → General → Security → API Key
-3. **Prowlarr**: Settings → General → Security → API Key
+**Radarr**:
+1. Settings → General → Security → API Key
 
-**Note:** Ensure each API key has the minimum required permissions for indexer management.
+**Sonarr**:
+1. Settings → General → Security → API Key
 
-### Docker / Docker Compose Example
+**Prowlarr**:
+1. Settings → General → Security → API Key
 
-```yaml
-version: '3.8'
-services:
-  ai-arr-control:
-    build: .
-    container_name: ai-arr-control
-    ports:
-      - "8000:8000"
-    environment:
-      RADARR_URL: http://radarr:7878
-      RADARR_API_KEY: your_key_here
-      SONARR_URL: http://sonarr:8989
-      SONARR_API_KEY: your_key_here
-      PROWLARR_URL: http://prowlarr:9696
-      PROWLARR_API_KEY: your_key_here
-      DEBUG: "false"
-    depends_on:
-      - radarr
-      - sonarr
-      - prowlarr
-    restart: unless-stopped
+## API Reference
+
+### Health & Status
+
+```
+GET /health                      # Health check
+GET /                            # Service info and endpoints
+GET /metrics                     # Application metrics
+GET /agents/status              # Scheduler and agent status
 ```
 
----
+### Indexer Management
 
-## Usage
+```
+GET  /indexers                           # List all indexers
+GET  /indexers/{service}                # Indexers for service
+GET  /indexers/stats                    # Indexer statistics
+POST /indexers/{service}/{id}/test      # Test indexer
+POST /indexers/{service}/{id}/enable    # Enable indexer
+POST /indexers/{service}/{id}/disable   # Disable indexer
+```
 
-### Health Check Endpoint
+### Monitoring & Analytics
 
-Monitor application status:
+```
+GET /health-history              # Health check history (24 hours default)
+GET /stats/detailed              # Detailed statistics (7 days)
+GET /events                      # Recent system events
+```
+
+### Manual Agent Control
+
+```
+POST /agents/health/run          # Run health check immediately
+POST /agents/autoheal/run        # Run autoheal cycle immediately
+POST /agents/discovery/run       # Run discovery immediately
+```
+
+All endpoints return JSON. See `/docs` for interactive Swagger documentation.
+
+## Usage Examples
+
+### Check System Health
 
 ```bash
 curl http://localhost:8000/health
-# Output: {"status":"ok","service":"AI Arr Control"}
+# Response:
+# {"status": "ok", "service": "AI Arr Control"}
 ```
 
-### API Documentation
+### View All Indexers
 
-FastAPI automatically generates interactive API documentation:
-
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
-- **OpenAPI Schema**: http://localhost:8000/openapi.json
-
-### Accessing Logs
-
-The application outputs structured logs to stdout:
-
-```
-INFO     | main:lifespan:60 - Starting AI Arr Control
-INFO     | core.logging:add_file_logging:45 - Database initialization successful
-INFO     | agents.indexer_health_agent:run:50 - Starting health check cycle
-INFO     | services.radarr:get_indexers:43 - Fetching Radarr indexers
-DEBUG    | services.radarr:test_indexer:64 - Testing Radarr indexer 1
-INFO     | agents.indexer_health_agent:run:68 - Radarr indexer 'NZBGeek' OK
-INFO     | agents.indexer_autoheal_agent:run:75 - Starting autoheal cycle
-WARNING  | agents.indexer_autoheal_agent:run:110 - Indexer radarr/FailedIndexer failed health check: Connection timeout
-WARNING  | agents.indexer_control_agent:disable_indexer:58 - Disabled indexer: FailedIndexer
+```bash
+curl http://localhost:8000/indexers | jq
 ```
 
-### Querying Health History
+### Manually Disable an Indexer
 
-Access the database to analyze trends:
-
-```python
-import sqlite3
-
-conn = sqlite3.connect('db/app.db')
-cursor = conn.cursor()
-
-# Last 20 health checks for Radarr
-cursor.execute("""
-    SELECT service, name, success, error, timestamp 
-    FROM indexer_health 
-    WHERE service = 'radarr' 
-    ORDER BY timestamp DESC 
-    LIMIT 20
-""")
-
-for service, name, success, error, ts in cursor.fetchall():
-    status = "✓ OK" if success else f"✗ FAILED: {error}"
-    print(f"{ts} | {service}/{name}: {status}")
+```bash
+curl -X POST http://localhost:8000/indexers/radarr/5/disable
+# Response:
+# {"success": true, "service": "radarr", "indexer_id": 5, "action": "disabled"}
 ```
 
-### Schedule Overview
+### View Health History
 
-| Agent | Interval | Purpose | Impact |
-|-------|----------|---------|--------|
-| **IndexerHealthAgent** | Every 30 min | Quick read-only health check | Logs only, no DB writes |
-| **IndexerAutoHealAgent** | Every 2 hours | Comprehensive test + remediation | May disable failed indexers |
-
-To customize schedules, edit the `scheduler.add_job()` calls in [main.py](main.py).
-
----
-
-## Project Structure
-
-```
-ai_arr_control/
-├── main.py                         # FastAPI app & scheduler initialization
-├── pyproject.toml                  # Package metadata, dependencies, tool configs
-├── .env.example                    # Configuration template (RENAME TO .env)
-├── .gitignore                      # Git exclusions
-├── LICENSE                         # Project license (Unlicense)
-├── README.md                       # This file
-├── CHANGES.md                      # Changelog and improvements log
-│
-├── config/
-│   ├── __init__.py
-│   └── settings.py                 # Environment configuration & validation
-│
-├── core/
-│   ├── __init__.py
-│   ├── http.py                     # HTTP client wrapper (Arr services)
-│   └── logging.py                  # Structured logging configuration
-│
-├── services/
-│   ├── __init__.py
-│   ├── radarr.py                   # Radarr API service wrapper
-│   ├── sonarr.py                   # Sonarr API service wrapper
-│   └── prowlarr.py                 # Prowlarr API service wrapper
-│
-├── agents/
-│   ├── __init__.py
-│   ├── indexer_health_agent.py     # Health monitoring agent (read-only)
-│   ├── indexer_control_agent.py    # Control primitives (enable/disable)
-│   └── indexer_autoheal_agent.py   # Auto-healing agent (main logic)
-│
-├── db/
-│   ├── __init__.py
-│   ├── models.py                   # SQLAlchemy ORM models
-│   ├── session.py                  # Database session & initialization
-│   └── app.db                      # SQLite database (auto-generated)
-│
-├── tests/
-│   ├── __init__.py
-│   ├── conftest.py                 # Pytest configuration & fixtures
-│   ├── test_main.py                # Application tests
-│   ├── test_agents.py              # Agent tests
-│   ├── test_services.py            # Service layer tests
-│   └── test_http.py                # HTTP client tests
-│
-└── __pycache__/                    # Python bytecode (auto-generated)
+```bash
+curl 'http://localhost:8000/health-history?hours=24&limit=50' | jq
 ```
 
----
+### Check Metrics
 
-## Development & Testing
+```bash
+curl http://localhost:8000/metrics | jq
+```
+
+### View Recent Events
+
+```bash
+curl 'http://localhost:8000/events?limit=20' | jq
+```
+
+## Command-Line Interface
+
+### Setup and Maintenance
+
+```bash
+# Initialize database
+python -m tools.cli initdb
+
+# Run application (foreground)
+python -m tools.cli run --host 0.0.0.0 --port 8000
+
+# Run detached (background)
+python -m tools.cli run --detach --port 8000
+
+# Stop background server
+python -m tools.cli stop
+
+# Check status
+python -m tools.cli status
+
+# Show version
+python -m tools.cli version
+```
+
+### Development Commands
+
+```bash
+# Run smoke tests
+python -m tools.cli check
+
+# Run full test suite
+python -m tools.cli tests
+
+# Run with auto-reload
+python -m tools.cli run --reload
+```
+
+## Deployment
+
+### Docker
+
+Build and run using provided Dockerfile:
+
+```bash
+docker build -t ai-arr-control:latest .
+docker run -d \
+  -e RADARR_URL=http://radarr:7878 \
+  -e RADARR_API_KEY=your_key \
+  -e SONARR_URL=http://sonarr:8989 \
+  -e SONARR_API_KEY=your_key \
+  -e PROWLARR_URL=http://prowlarr:9696 \
+  -e PROWLARR_API_KEY=your_key \
+  -p 8000:8000 \
+  ai-arr-control:latest
+```
+
+### Docker Compose
+
+Use the provided `docker-compose.yml`:
+
+```bash
+docker-compose up -d
+```
+
+### Kubernetes
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for Kubernetes deployment instructions.
+
+### Systemd Service
+
+Create `/etc/systemd/system/ai-arr-control.service`:
+
+```ini
+[Unit]
+Description=AI Arr Control
+After=network.target
+
+[Service]
+Type=simple
+User=ai-arr
+WorkingDirectory=/opt/ai-arr-control
+ExecStart=/opt/ai-arr-control/venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
+
+```bash
+sudo systemctl enable ai-arr-control
+sudo systemctl start ai-arr-control
+```
+
+## Development
+
+### Setup Development Environment
+
+```bash
+git clone https://github.com/yourusername/ai_arr_control.git
+cd ai_arr_control
+
+python -m venv venv
+source venv/bin/activate
+
+pip install -e ".[dev]"
+```
 
 ### Running Tests
 
 ```bash
-# Install test dependencies
-pip install -e ".[dev]"
-
 # Run all tests
 pytest tests/
+
+# Run with coverage
+pytest --cov=. tests/
 
 # Run specific test file
 pytest tests/test_agents.py
 
-# Run with coverage
-pytest --cov=agents --cov=services --cov=core tests/
+# Run in watch mode (requires pytest-watch)
+ptw tests/
 ```
 
-### Code Quality Tools
+### Code Quality
 
 ```bash
-# Code formatting
+# Format code
 black .
 
-# Linting
+# Lint
 ruff check .
 
-# Type hints
+# Type checking
 mypy agents/ services/ config/ core/ db/
-
-# All checks
-black . && ruff check . && mypy agents/ services/ config/ core/ db/
 ```
 
-### Development Mode
-
-For development with auto-reload:
+### Running Locally
 
 ```bash
-uvicorn main:app --reload --log-level debug
-```
+# Setup .env with test values
+cp .env.example .env
 
----
+# Initialize database
+python -m tools.cli initdb
+
+# Run in reload mode
+uvicorn main:app --reload
+
+# Or use CLI
+python -m tools.cli run --reload
+```
 
 ## Troubleshooting
 
-### "ModuleNotFoundError: No module named 'config'"
+### Connection Failures
 
-**Solution:** Install package in development mode:
-```bash
-pip install -e .
-```
+**Problem**: `Connection error` when connecting to Radarr/Sonarr
 
-### "Failed to fetch Radarr indexers: Connection refused"
+**Solutions**:
+1. Verify URLs are correct: `RADARR_URL=http://host:port` (no trailing slash)
+2. Check API keys are correct
+3. Ensure services are accessible from the host running AI Arr Control
+4. If behind proxy, configure accordingly
+5. Check firewall rules
 
-**Solution:** Ensure:
-1. Radarr instance is running: `curl http://radarr:7878/api/v3/system/status`
-2. Network connectivity: `ping radarr` (or your Radarr hostname/IP)
-3. Firewall allows connection to port 7878
-4. URL in `.env` is correct
+### Database Issues
 
-### "No indexers being tested"
+**Problem**: `sqlite3.OperationalError: unable to open database file`
 
-**Checklist:**
-1. ✓ `.env` file exists with correct URLs and API keys
-2. ✓ API keys are valid (not placeholder values)
-3. ✓ Services are accessible
-4. ✓ Database initialized (should happen automatically)
-5. ✓ Check logs for errors: `grep -i error application.log`
+**Solutions**:
+1. Ensure `db/` directory is writable: `mkdir -p db && chmod 755 db`
+2. For PostgreSQL, verify connection string is correct
+3. Check database user has proper permissions
 
-### "Scheduler not running"
+### High CPU Usage
 
-**Solution:** Ensure app started without errors:
-```bash
-# Check for startup errors
-uvicorn main:app
+**Problem**: Application consuming excessive CPU
 
-# In production, use proper ASGI server
-gunicorn -w 1 -k uvicorn.workers.UvicornWorker main:app
-```
+**Solutions**:
+1. Check scheduler job intervals are reasonable
+2. Verify API responses are returning reasonable data
+3. Look for infinite loops or recursion in custom code
+4. Monitor with `top` or `htop` to identify bottleneck
 
-### Database file too large
+### Memory Issues
 
-**Solution:** Archive old data:
-```sql
-DELETE FROM indexer_health 
-WHERE timestamp < datetime('now', '-90 days');
-```
+**Problem**: Memory usage growing over time
 
-### Disabling indexers too aggressively
+**Solutions**:
+1. Ensure database connections are properly closed
+2. Check for large response objects not being garbage collected
+3. Monitor with `ps aux | grep python`
+4. Consider reducing health check frequency or database retention
 
-**Solution:** Adjust health check schedules or disable auto-heal temporarily:
-- Edit schedule intervals in [main.py](main.py)
-- Or temporarily set `enable=True` on indexers via Radarr/Sonarr UI
+## Architecture & Design
 
----
+### Agent Framework
 
-## Extending the System
+The system uses an extensible agent pattern:
 
-### Adding a Custom Agent
+- **IndexerHealthAgent**: Read-only monitoring, no changes
+- **IndexerAutoHealAgent**: Testing + remediation (disables failures)
+- **IndexerControlAgent**: Low-level enable/disable operations
+- **IndexerDiscoveryAgent**: Optional external indexer discovery
 
-1. Create `agents/custom_agent.py`:
-```python
-from loguru import logger
+Agents run on configured schedules via APScheduler.
 
-class CustomAgent:
-    def __init__(self, radarr, sonarr):
-        self.radarr = radarr
-        self.sonarr = sonarr
-        logger.info("Initialized CustomAgent")
-    
-    async def run(self):
-        """Custom logic runs here periodically."""
-        logger.info("CustomAgent executing")
-        # Your logic here
-```
+### Database Schema
 
-2. Wire up in [main.py](main.py):
-```python
-from agents.custom_agent import CustomAgent
+- **IndexerHealth**: Historical records of health check results
+  - Fields: service, indexer_id, name, success, error, timestamp
+  - Indexes: (service, timestamp), (indexer_id)
+  - Retention: Indefinite (consider archiving for long-term storage)
 
-# In lifespan()...
-custom_agent = CustomAgent(radarr, sonarr)
-scheduler.add_job(custom_agent.run, "interval", hours=1, id="custom_agent")
-```
+### Error Handling
 
-### Adding a New Service
+All components implement:
+- Try-catch-log pattern for graceful degradation
+- Detailed error logging with context
+- Structured exception messages
+- Timeout protection on external calls
 
-1. Create `services/new_service.py` with service class
-2. Initialize in [main.py](main.py)
-3. Pass to agents that need it
+### Logging
 
----
+Structured logging using Loguru with:
+- Color-coded output for easy reading
+- Context (module, function, line number)
+- Optional debug mode for verbose output
+- Optional file logging (see `core/logging.py`)
 
-## Best Practices
+## Performance Considerations
 
-### Security
-- ✓ Never commit `.env` to version control
-- ✓ Use strong API keys (generate new ones if exposed)
-- ✓ Restrict API key scopes to indexer management only (if supported)
-- ✓ Use HTTPS URLs in production if available
+### Health Check Frequency
 
-### Operations
-- ✓ Monitor logs regularly for unusual patterns
-- ✓ Backup database periodically: `cp db/app.db db/app.db.backup-$(date +%Y%m%d)`
-- ✓ Test configuration changes in development first
-- ✓ Review disabled indexers periodically to understand failure patterns
+Default schedules:
+- Health checks: Every 30 minutes (read-only, minimal impact)
+- Autoheal: Every 2 hours (includes disable operations)
 
-### Production Deployment
-- ✗ **Never** run with `DEBUG=True` in production
-- ✗ **Never** use `--reload` flag in production
-- ✓ Use production ASGI server (gunicorn, uvicorn, etc.)
-- ✓ Configure log rotation to prevent disk full
-- ✓ Monitor application health endpoint
-- ✓ Set up alerting for critical errors
-- ✓ Consider PostgreSQL instead of SQLite for multi-instance deployments
+Adjust in `main.py` scheduler configuration if needed.
 
-### Performance
-- Health checks are lightweight (read-only)
-- Auto-heal runs less frequently to avoid excessive API load
-- Database uses indexes for fast queries
-- All network operations are non-blocking (async)
+### Database Size
 
----
+IndexerHealth table grows over time:
+- ~200 bytes per record
+- ~48 records per indexer per day (every 30 min check)
+- For 50 indexers: ~480K per day, ~175MB per year
 
-## Upgrading
+Consider:
+- Archiving old records to separate table
+- Reducing retention period
+- Using PostgreSQL for better scaling
 
-### From v0.2.0 to v0.3.0+
+### API Timeouts
 
-- New configuration validation at startup
-- Enhanced logging with file rotation support
-- Database schema unchanged (backward compatible)
-- New API endpoints for monitoring
-- All existing functionality preserved
+Default HTTP timeout: 30 seconds
 
----
-
-## License
-
-This project is released into the public domain under the [Unlicense](LICENSE).
-
----
+Adjust in `ArrHttpClient` initialization if needed.
 
 ## Contributing
 
-Contributions are welcome! Please:
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
 
-1. **Code Style**: Follow PEP 8 (use `black` and `ruff`)
-2. **Type Hints**: Add type annotations for all functions
-3. **Documentation**: Update docstrings and README
-4. **Tests**: Add tests for new features
-5. **Commit Messages**: Use clear, descriptive messages
+## Changelog
 
-### Making Changes
+See [CHANGES.md](CHANGES.md) for version history.
 
-```bash
-# Create feature branch
-git checkout -b feature/my-feature
+## License
 
-# Make changes, run tests
-pytest tests/
+This project is released under the [Unlicense](LICENSE) - free and unencumbered software.
 
-# Format and lint
-black . && ruff check .
+## Support
 
-# Commit and push
-git add -A
-git commit -m "Add my feature"
-git push origin feature/my-feature
-```
+For issues, questions, or feature requests:
+
+1. Check [TROUBLESHOOTING.md](DEPLOYMENT.md#troubleshooting) section in deployment guide
+2. Open an issue on GitHub
+3. Check existing issues for similar problems
+4. Include logs, configuration (without API keys), and steps to reproduce
 
 ---
 
-## Support & Issues
-
-For questions, bugs, or feature requests:
-
-1. Check [Troubleshooting](#troubleshooting) section first
-2. Search existing [GitHub issues](https://github.com/yourusername/ai_arr_control/issues)
-3. Open a [new issue](https://github.com/yourusername/ai_arr_control/issues/new) with:
-   - Clear description of problem/request
-   - Steps to reproduce (if bug)
-   - Python version, OS, deployment method
-   - Relevant logs (sanitize API keys!)
-
----
-
-## Version History
-
-### v0.3.0 (Latest)
-- **Enhanced Configuration**: Added validation, improved documentation
-- **Improved Logging**: Structured logging with file rotation support
-- **Better Error Handling**: Comprehensive error handling across all modules
-- **Extended Documentation**: Production-grade README with examples
-- **Code Quality**: Enhanced docstrings, type hints, inline comments
-
-### v0.2.0
-- Initial public release
-- Basic health monitoring and auto-heal functionality
-
----
-
-**Built with ❤️ using FastAPI, SQLAlchemy, and Python 3.11+**
+**Made for media enthusiasts by media enthusiasts.** 🎬📺

@@ -6,8 +6,11 @@ Provides convenient developer and operational commands:
 - `initdb` initializes the database
 - `tests` runs the test suite
 - `version` prints the project version
+- `stop` stops a running detached server
+- `status` checks if the server is running
 
-This script is importable and also registered as a console script.
+This script is importable and also registered as a console script entry point
+in pyproject.toml.
 """
 from __future__ import annotations
 
@@ -136,8 +139,7 @@ def tests() -> None:
 @main.command()
 def version() -> None:
     """Print project version."""
-    # Keep static for now; update to read from pyproject or package metadata if needed
-    click.echo("ai-arr-control 0.3.0")
+    click.echo("ai-arr-control 0.4.0")
 
 
 if __name__ == "__main__":
