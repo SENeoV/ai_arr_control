@@ -1,4 +1,6 @@
-from typing import Optional
+from typing import AsyncGenerator, Optional
+
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -13,20 +15,23 @@ from agents.indexer_control_agent import IndexerControlAgent
 from agents.indexer_autoheal_agent import IndexerAutoHealAgent
 from db.session import init_db
 
-app = FastAPI(title=settings.app_name)
-
 
 def _create_scheduler() -> AsyncIOScheduler:
     sched = AsyncIOScheduler()
     return sched
 
 
-@app.on_event("startup")
-async def startup_event() -> None:
-    """Initialize DB, services, agents and scheduler on application startup.
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator:
+    """Manage application startup and shutdown events.
 
-    Services are stored on `app.state` so tests and other modules can reuse them.
+    This function handles:
+    - Database initialization
+    - Service instantiation
+    - Scheduler creation and startup
+    - Resource cleanup on shutdown
     """
+    # Startup
     await init_db()
 
     # create HTTP clients and services
@@ -56,10 +61,9 @@ async def startup_event() -> None:
 
     app.state.scheduler = scheduler
 
+    yield
 
-@app.on_event("shutdown")
-async def shutdown_event() -> None:
-    """Cleanly shutdown scheduler and close HTTP clients."""
+    # Shutdown
     scheduler: Optional[AsyncIOScheduler] = getattr(app.state, "scheduler", None)
     if scheduler:
         try:
@@ -76,6 +80,9 @@ async def shutdown_event() -> None:
                 await svc.client.close()
             except Exception:
                 pass
+
+
+app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
 
 @app.get("/health")
