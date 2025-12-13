@@ -42,7 +42,7 @@ from api.schemas import (
     DetailedStatsResponse,
     AgentStatusResponse,
 )
-from core.monitoring import metrics_collector, event_log
+from core.monitoring import metrics_collector, event_log, startup_status
 
 
 def _create_scheduler() -> AsyncIOScheduler:
@@ -158,7 +158,44 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     logger.info("Scheduler started with jobs configured")
 
     app.state.scheduler = scheduler
-    logger.info(f"{settings.app_name} startup completed successfully")
+    
+    # Mark startup as starting
+    startup_status.mark_startup_start()
+    
+    # Run initial health check immediately on startup for professional responsiveness
+    logger.info("Running initial health check on startup...")
+    try:
+        await health_agent.run()
+        startup_status.mark_agent_run("health_check")
+        logger.info("Initial health check completed")
+    except Exception as e:
+        startup_status.record_startup_error("health_check", str(e))
+        logger.warning(f"Initial health check failed: {e}")
+    
+    # Run initial autoheal check to identify and remediate problems immediately
+    logger.info("Running initial autoheal cycle on startup...")
+    try:
+        await autoheal_agent.run()
+        startup_status.mark_agent_run("autoheal")
+        logger.info("Initial autoheal cycle completed")
+    except Exception as e:
+        startup_status.record_startup_error("autoheal", str(e))
+        logger.warning(f"Initial autoheal cycle failed: {e}")
+    
+    # Run discovery if enabled
+    if settings.discovery_enabled:
+        logger.info("Running initial discovery on startup...")
+        try:
+            await discovery_agent.run()
+            startup_status.mark_agent_run("discovery")
+            logger.info("Initial discovery completed")
+        except Exception as e:
+            startup_status.record_startup_error("discovery", str(e))
+            logger.warning(f"Initial discovery failed: {e}")
+    
+    # Mark startup as complete
+    startup_status.mark_startup_complete()
+    logger.info(f"{settings.app_name} startup completed successfully - all agents initialized and first run complete")
 
     yield
 
@@ -228,7 +265,8 @@ async def root() -> ServiceInfoResponse:
                 "stats": "/indexers/stats",
                 "detailed_stats": "/stats/detailed",
                 "health_history": "/health-history",
-                "agent_status": "/agents/status"
+                "agent_status": "/agents/status",
+                "startup_status": "/startup-status"
             },
             "indexers": {
                 "list_all": "/indexers",
@@ -757,3 +795,12 @@ async def get_recent_events(limit: int = 50) -> dict:
         "events": events
     }
 
+
+@app.get("/startup-status", tags=["monitoring"])
+async def get_startup_status() -> dict:
+    """Get application startup status and initialization progress.
+    
+    Returns:
+        Startup status including completion state, agent initialization, and any errors
+    """
+    return startup_status.get_status()

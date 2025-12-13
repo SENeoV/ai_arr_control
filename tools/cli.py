@@ -25,6 +25,9 @@ from pathlib import Path
 import click
 
 from tools.check_runtime import main as check_main
+import urllib.request
+import urllib.error
+import json
 
 
 @click.group()
@@ -140,6 +143,156 @@ def tests() -> None:
 def version() -> None:
     """Print project version."""
     click.echo("ai-arr-control 0.4.0")
+
+
+# Defer CLI invocation to bottom after all commands are registered
+
+
+@main.group()
+def manage() -> None:
+    """Convenience manage commands matching scripts/manage.* helpers."""
+
+
+@manage.command()
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", default=8000, show_default=True)
+@click.option("--detach/--no-detach", default=True, show_default=True)
+def start(host: str, port: int, detach: bool) -> None:
+    """Start server (defaults to detached)."""
+    # Reuse run command logic
+    ctx = click.get_current_context()
+    # Build parameters for run
+    params = {"host": host, "port": port, "reload": False, "log_level": "info", "detach": detach}
+    # Invoke run
+    ctx.invoke(run, **params)
+
+
+@manage.command()
+def restart() -> None:
+    """Restart server (stop then start detached)."""
+    ctx = click.get_current_context()
+    # Try stop (ignore errors)
+    try:
+        ctx.invoke(stop)
+    except SystemExit:
+        pass
+    # Start detached
+    ctx.invoke(start)
+
+
+@manage.command()
+def logs(loglines: int = 50) -> None:
+    """Show recent application logs."""
+    logfile = Path("ai_arr_control.log")
+    if not logfile.exists():
+        click.echo(f"Log file not found: {logfile}")
+        raise SystemExit(1)
+
+    try:
+        with open(logfile, "r", encoding="utf-8", errors="ignore") as f:
+            lines = f.readlines()
+            for line in lines[-loglines:]:
+                click.echo(line.rstrip())
+    except Exception as e:
+        click.echo(f"Failed to read log file: {e}")
+        raise SystemExit(1)
+
+
+@manage.command()
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", default=8000, show_default=True)
+def status(host: str, port: int) -> None:
+    """Query server for health, startup status, and metrics."""
+    base = f"http://{host}:{port}"
+    def _http_get(u: str, t: int = 3):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": "ai-arr-control-cli"}), timeout=t) as resp:
+                return resp.read().decode("utf-8"), resp.getcode()
+        except urllib.error.HTTPError as he:
+            return he.read().decode("utf-8") if he.fp is not None else str(he), he.code
+        except Exception as e:
+            raise
+
+    try:
+        body, code = _http_get(f"{base}/health", 3)
+        if code == 200:
+            click.echo("Server is RUNNING")
+            click.echo(body)
+        else:
+            click.echo("Server responded with non-OK status")
+    except Exception:
+        click.echo("Server is NOT RUNNING or unreachable")
+        raise SystemExit(1)
+
+    try:
+        body2, code2 = _http_get(f"{base}/startup-status", 3)
+        if code2 == 200:
+            click.echo("Startup status:")
+            click.echo(body2)
+    except Exception:
+        click.echo("Could not retrieve startup-status")
+
+    try:
+        body3, code3 = _http_get(f"{base}/metrics", 3)
+        if code3 == 200:
+            click.echo("Metrics:")
+            click.echo(body3)
+    except Exception:
+        click.echo("Could not retrieve metrics")
+
+
+@manage.command()
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", default=8000, show_default=True)
+def health(host: str, port: int) -> None:
+    """Run health check (query /stats/detailed)."""
+    base = f"http://{host}:{port}"
+    try:
+        body, code = _http_get(f"{base}/stats/detailed", 5)
+        if code == 200:
+            click.echo(body)
+        else:
+            click.echo(f"Health query failed with status {code}")
+            raise SystemExit(1)
+    except Exception as e:
+        click.echo(f"Health query failed: {e}")
+        raise SystemExit(1)
+
+
+@manage.command()
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", default=8000, show_default=True)
+def metrics(host: str, port: int) -> None:
+    """Show metrics (query /metrics)."""
+    base = f"http://{host}:{port}"
+    try:
+        body, code = _http_get(f"{base}/metrics", 3)
+        if code == 200:
+            click.echo(body)
+        else:
+            click.echo(f"Metrics query failed with status {code}")
+            raise SystemExit(1)
+    except Exception as e:
+        click.echo(f"Metrics query failed: {e}")
+        raise SystemExit(1)
+
+
+@manage.command()
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", default=8000, show_default=True)
+def events(host: str, port: int) -> None:
+    """Show recent events (query /events)."""
+    base = f"http://{host}:{port}"
+    try:
+        body, code = _http_get(f"{base}/events?limit=10", 3)
+        if code == 200:
+            click.echo(body)
+        else:
+            click.echo(f"Events query failed with status {code}")
+            raise SystemExit(1)
+    except Exception as e:
+        click.echo(f"Events query failed: {e}")
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
