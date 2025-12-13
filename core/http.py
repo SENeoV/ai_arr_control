@@ -17,3 +17,19 @@ class ArrHttpClient:
         r = await self.client.post(path, json=json)
         r.raise_for_status()
         return r.json()
+
+    async def put(self, path: str, json=None):
+        r = await self.client.put(path, json=json)
+        r.raise_for_status()
+        return r.json()
+
+    async def delete(self, path: str):
+        r = await self.client.delete(path)
+        r.raise_for_status()
+        return r.json()
+
+    async def close(self):
+        await self.client.aclose()
+
+    async def __aenter__(self):
+        return self
