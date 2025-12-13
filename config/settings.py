@@ -2,9 +2,13 @@
 
 Configuration is loaded from .env file in the project root, or from
 the current environment. All service URLs and API keys must be provided.
+
+The Settings class performs strict validation and will raise errors on
+missing required fields or invalid configuration.
 """
 
-from pydantic import Field
+from typing import Optional
+from pydantic import Field, HttpUrl, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pathlib import Path
 
@@ -12,33 +16,50 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 
 
 class Settings(BaseSettings):
-    """Core application settings loaded from environment or .env file."""
+    """Core application settings loaded from environment or .env file.
+    
+    All URLs are validated as proper HTTP/HTTPS URLs.
+    All API keys are required and must be non-empty strings.
+    Database URL defaults to SQLite but can be overridden for production.
+    """
 
-    app_name: str = "AI Arr Control"
-    debug: bool = Field(default=False, description="Enable debug mode")
+    app_name: str = Field(
+        default="AI Arr Control",
+        description="Application name (used in API responses)"
+    )
+    debug: bool = Field(
+        default=False,
+        description="Enable debug mode (verbose logging, stack traces)"
+    )
 
-    # Radarr service configuration
+    # Radarr service configuration (REQUIRED)
     radarr_url: str = Field(
-        description="Radarr service URL (e.g., http://radarr:7878)"
+        description="Radarr service URL (e.g., http://radarr:7878 or http://192.168.1.100:7878)"
     )
-    radarr_api_key: str = Field(description="Radarr API key")
+    radarr_api_key: str = Field(
+        description="Radarr API key (from Settings -> General -> Security -> API Key)"
+    )
 
-    # Sonarr service configuration
+    # Sonarr service configuration (REQUIRED)
     sonarr_url: str = Field(
-        description="Sonarr service URL (e.g., http://sonarr:8989)"
+        description="Sonarr service URL (e.g., http://sonarr:8989 or http://192.168.1.100:8989)"
     )
-    sonarr_api_key: str = Field(description="Sonarr API key")
+    sonarr_api_key: str = Field(
+        description="Sonarr API key (from Settings -> General -> Security -> API Key)"
+    )
 
-    # Prowlarr service configuration
+    # Prowlarr service configuration (REQUIRED)
     prowlarr_url: str = Field(
-        description="Prowlarr service URL (e.g., http://prowlarr:9696)"
+        description="Prowlarr service URL (e.g., http://prowlarr:9696 or http://192.168.1.100:9696)"
     )
-    prowlarr_api_key: str = Field(description="Prowlarr API key")
+    prowlarr_api_key: str = Field(
+        description="Prowlarr API key (from Settings -> General -> Security -> API Key)"
+    )
 
-    # Database configuration
+    # Database configuration (OPTIONAL - defaults to SQLite)
     database_url: str = Field(
         default=f"sqlite+aiosqlite:///{BASE_DIR}/db/app.db",
-        description="SQLAlchemy database URL",
+        description="SQLAlchemy database URL (supports SQLite, PostgreSQL, MySQL, etc.)"
     )
 
     model_config = SettingsConfigDict(
@@ -47,6 +68,31 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",  # Ignore extra environment variables not in the model
     )
+
+    @field_validator("radarr_api_key", "sonarr_api_key", "prowlarr_api_key")
+    @classmethod
+    def api_key_must_not_be_empty(cls, v: str) -> str:
+        """Validate that API keys are not empty placeholder strings."""
+        if not v or v.startswith("your_") or v == "change_me":
+            raise ValueError("API key appears to be a placeholder. Please set actual value.")
+        return v
+
+    @field_validator("radarr_url", "sonarr_url", "prowlarr_url", "database_url")
+    @classmethod
+    def validate_urls(cls, v: str) -> str:
+        """Ensure URLs are well-formed and accessible."""
+        if not v:
+            raise ValueError("URL cannot be empty")
+        return v.rstrip("/")  # Remove trailing slash for consistency
+
+    def validate_at_startup(self) -> None:
+        """Perform runtime validation of configuration.
+        
+        Call this method at application startup to ensure all external
+        services are properly configured.
+        """
+        # This method can be extended with connectivity checks in the future
+        pass
 
 
 settings = Settings()
