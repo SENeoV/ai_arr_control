@@ -7,10 +7,15 @@ management capabilities.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, Optional, List
 from loguru import logger
+
+# Get current UTC time in a timezone-aware manner
+def utc_now() -> datetime:
+    """Get current UTC time as timezone-aware datetime."""
+    return datetime.now(timezone.utc)
 
 
 class AgentState(str, Enum):
@@ -276,7 +281,7 @@ class AgentChain:
                 # Update metrics
                 agent.metrics.total_runs += 1
                 agent.metrics.last_run_start = result.timestamp
-                agent.metrics.last_run_end = datetime.utcnow()
+                agent.metrics.last_run_end = utc_now()
 
                 if result.success:
                     agent.metrics.successful_runs += 1

@@ -83,7 +83,12 @@ class CircuitBreaker:
     def record_failure(self) -> None:
         """Record a failed call."""
         self.failure_count += 1
-        self.last_failure_time = asyncio.get_event_loop().time() if asyncio.get_running_loop() else None
+        try:
+            self.last_failure_time = asyncio.get_running_loop().time()
+        except RuntimeError:
+            # No event loop running, use time.time()
+            import time
+            self.last_failure_time = time.time()
         
         if self.failure_count >= self.failure_threshold:
             self.is_open = True
@@ -97,14 +102,18 @@ class CircuitBreaker:
         # Try to recover after timeout
         if self.last_failure_time:
             try:
-                current_time = asyncio.get_event_loop().time()
-                if current_time - self.last_failure_time > self.recovery_timeout:
-                    logger.info(f"Circuit breaker '{self.name}' attempting recovery")
-                    self.is_open = False
-                    self.failure_count = 0
-                    return True
-            except Exception:
-                pass
+                current_time = asyncio.get_running_loop().time()
+            except RuntimeError:
+                # No event loop, use time.time()
+                import time
+                current_time = time.time()
+            
+            elapsed = current_time - self.last_failure_time
+            if elapsed >= self.recovery_timeout:
+                logger.info(f"Circuit breaker '{self.name}' attempting recovery")
+                self.is_open = False
+                self.failure_count = 0
+                return True
         
         return False
 

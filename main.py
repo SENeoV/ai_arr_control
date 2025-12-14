@@ -9,7 +9,7 @@ Main application entry point. Initializes FastAPI application with:
 
 from typing import AsyncGenerator, Optional
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI, HTTPException
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -45,6 +45,12 @@ from api.schemas import (
     AgentStatusResponse,
 )
 from core.monitoring import metrics_collector, event_log, startup_status
+
+
+# Get current UTC time in a timezone-aware manner
+def utc_now() -> datetime:
+    """Get current UTC time as timezone-aware datetime."""
+    return datetime.now(timezone.utc)
 
 
 def _create_scheduler() -> AsyncIOScheduler:
@@ -626,7 +632,7 @@ async def get_health_history(hours: int = 24, limit: int = 100) -> dict:
     try:
         async with SessionLocal() as session:
             # Calculate time range
-            cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+            cutoff_time = utc_now() - timedelta(hours=hours)
             
             # Query health records
             stmt = (
@@ -661,7 +667,7 @@ async def get_health_history(hours: int = 24, limit: int = 100) -> dict:
             return {
                 "hours": hours,
                 "records_returned": len(records),
-                "query_time": datetime.utcnow().isoformat(),
+                "query_time": utc_now().isoformat(),
                 "history": history
             }
     except Exception as e:
@@ -683,7 +689,7 @@ async def get_detailed_stats() -> dict:
     try:
         async with SessionLocal() as session:
             # Get last 7 days of data
-            cutoff_time = datetime.utcnow() - timedelta(days=7)
+            cutoff_time = utc_now() - timedelta(days=7)
             
             stmt = (
                 select(IndexerHealth)
@@ -702,7 +708,7 @@ async def get_detailed_stats() -> dict:
             }
             
             detailed_stats = {
-                "generated_at": datetime.utcnow().isoformat(),
+                "generated_at": utc_now().isoformat(),
                 "total_records": len(records),
                 "by_service": {}
             }
@@ -812,7 +818,7 @@ async def get_recent_events(limit: int = 50) -> dict:
     """
     events = event_log.get_recent_events(limit=limit)
     return {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": utc_now().isoformat(),
         "events_count": len(events),
         "events": events
     }

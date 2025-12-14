@@ -6,7 +6,7 @@ and integration scenarios.
 
 import pytest
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from agents.base import (
@@ -14,6 +14,11 @@ from agents.base import (
 )
 from agents.orchestrator import AgentOrchestrator, AgentSchedule, OrchestratorMetrics
 from agents.monitor import AgentMonitor, EventType, Event, AgentHealthStatus
+
+# Get current UTC time in a timezone-aware manner
+def utc_now() -> datetime:
+    """Get current UTC time as timezone-aware datetime."""
+    return datetime.now(timezone.utc)
 
 
 # Test Fixtures and Mock Agents
@@ -254,7 +259,7 @@ class TestAgentOrchestrator:
         assert schedule.should_execute() is True
 
         # Set future execution time
-        schedule.next_execution = datetime.utcnow() + timedelta(seconds=60)
+        schedule.next_execution = utc_now() + timedelta(seconds=60)
         assert schedule.should_execute() is False
 
     def test_agent_schedule_update(self):

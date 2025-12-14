@@ -5,12 +5,17 @@ coordination across multiple autonomous agents working toward common goals.
 """
 
 from typing import Dict, Optional, List, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
 import asyncio
 from loguru import logger
 
 from agents.base import Agent, AgentResult, AgentState
+
+# Get current UTC time in a timezone-aware manner
+def utc_now() -> datetime:
+    """Get current UTC time as timezone-aware datetime."""
+    return datetime.now(timezone.utc)
 
 
 @dataclass
@@ -31,11 +36,11 @@ class AgentSchedule:
         if self.next_execution is None:
             return True
 
-        return datetime.utcnow() >= self.next_execution
+        return utc_now() >= self.next_execution
 
     def update_next_execution(self) -> None:
         """Update next execution time after a run."""
-        self.last_executed = datetime.utcnow()
+        self.last_executed = utc_now()
         self.next_execution = self.last_executed + timedelta(
             seconds=self.interval_seconds
         )
@@ -51,12 +56,12 @@ class OrchestratorMetrics:
     total_agent_successes: int = 0
     total_agent_failures: int = 0
     cycle_duration_seconds: float = 0.0
-    started_at: datetime = field(default_factory=datetime.utcnow)
+    started_at: datetime = field(default_factory=utc_now)
 
     @property
     def uptime_seconds(self) -> float:
         """Calculate orchestrator uptime."""
-        return (datetime.utcnow() - self.started_at).total_seconds()
+        return (utc_now() - self.started_at).total_seconds()
 
     @property
     def cycle_success_rate(self) -> float:
@@ -121,7 +126,7 @@ class AgentOrchestrator:
             schedule = AgentSchedule(
                 agent_name=agent.name,
                 interval_seconds=interval_seconds,
-                next_execution=datetime.utcnow(),
+                next_execution=utc_now(),
             )
             self.schedules[agent.name] = schedule
             logger.info(

@@ -1,12 +1,17 @@
 """Monitoring and observability utilities."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 from dataclasses import dataclass, asdict
 import json
 from pathlib import Path
 
 from loguru import logger
+
+# Get current UTC time in a timezone-aware manner
+def utc_now() -> datetime:
+    """Get current UTC time as timezone-aware datetime."""
+    return datetime.now(timezone.utc)
 
 
 @dataclass
@@ -25,7 +30,7 @@ class MetricsCollector:
     """Collects and manages application metrics."""
     
     def __init__(self) -> None:
-        self.start_time = datetime.utcnow()
+        self.start_time = utc_now()
         self.error_count = 0
         self.success_count = 0
     
@@ -39,7 +44,7 @@ class MetricsCollector:
     
     def get_metrics(self) -> Dict[str, Any]:
         """Get current metrics snapshot."""
-        uptime = (datetime.utcnow() - self.start_time).total_seconds()
+        uptime = (utc_now() - self.start_time).total_seconds()
         total = self.error_count + self.success_count
         success_rate = (
             (self.success_count / total * 100) if total > 0 else 0
@@ -78,7 +83,7 @@ class EventLog:
             severity: Event severity (INFO, WARNING, ERROR)
         """
         event = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now().isoformat(),
             "event_type": event_type,
             "service": service,
             "severity": severity,
@@ -136,7 +141,7 @@ class StartupStatus:
     
     def mark_startup_start(self) -> None:
         """Mark startup as starting."""
-        self.startup_time = datetime.utcnow()
+        self.startup_time = utc_now()
         self.startup_complete = False
     
     def mark_agent_run(self, agent_name: str) -> None:
@@ -149,7 +154,7 @@ class StartupStatus:
         self.startup_errors.append({
             "agent": agent_name,
             "error": error,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now().isoformat(),
         })
     
     def mark_startup_complete(self) -> None:
@@ -167,7 +172,7 @@ class StartupStatus:
         if self.startup_time:
             status["startup_time"] = self.startup_time.isoformat()
             status["startup_duration_seconds"] = (
-                datetime.utcnow() - self.startup_time
+                utc_now() - self.startup_time
             ).total_seconds()
         
         if self.startup_errors:

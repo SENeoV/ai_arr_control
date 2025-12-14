@@ -5,10 +5,15 @@ for agent operations with detailed metrics and observability.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Any, Optional
 from enum import Enum
 from loguru import logger
+
+# Get current UTC time in a timezone-aware manner
+def utc_now() -> datetime:
+    """Get current UTC time as timezone-aware datetime."""
+    return datetime.now(timezone.utc)
 
 
 class EventType(str, Enum):
@@ -31,7 +36,7 @@ class Event:
     event_type: EventType
     agent_name: Optional[str]
     message: str
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=utc_now)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def __repr__(self) -> str:
@@ -128,7 +133,7 @@ class AgentMonitor:
             self.agent_health[agent_name] = AgentHealthStatus(agent_name=agent_name)
 
         status = self.agent_health[agent_name]
-        status.last_run = datetime.utcnow()
+        status.last_run = utc_now()
 
         if success:
             status.consecutive_failures = 0
